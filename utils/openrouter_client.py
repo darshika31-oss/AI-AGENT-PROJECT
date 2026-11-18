@@ -60,7 +60,8 @@ class OpenRouterClient:
             if response.status_code == 200:
                 data = response.json()
                 message = data.get("choices", [{}])[0].get("message", {})
-                text = message.get("content", "").strip()
+                text = self._extract_message_content(message)
+            
                 if text:
                     return (True, f"Connected to OpenRouter ({self.model_name})")
                 return (False, "OpenRouter returned an empty response.")
@@ -107,7 +108,7 @@ class OpenRouterClient:
             if response.status_code == 200:
                 data = response.json()
                 message = data.get("choices", [{}])[0].get("message", {})
-                text = message.get("content", "").strip()
+                text = self._extract_message_content(message) 
                 if not text:
                     raise RuntimeError("Received an empty response from OpenRouter.")
                 cleaned = self.extract_final_response(data)
@@ -128,6 +129,36 @@ class OpenRouterClient:
         except Exception as exc:
             logger.error("OpenRouter API call failed: %s", exc)
             raise RuntimeError(f"Unexpected error calling OpenRouter: {exc}") from exc
+
+    @staticmethod
+    def _extract_message_content(message) -> str:
+        """
+        Safely extract assistant text from an OpenRouter message.
+        Handles missing/null content and structured content parts.
+        """
+        if not isinstance(message, dict):
+            return ""
+
+        content = message.get("content")
+
+        if isinstance(content, str):
+            return content.strip()
+
+        if isinstance(content, list):
+            parts = []
+
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+
+            return "".join(parts).strip()
+
+        return ""
+
 
     def _build_headers(self) -> dict:
         headers = {
@@ -177,7 +208,7 @@ class OpenRouterClient:
             The cleaned final assistant content.
         """
         message = data.get("choices", [{}])[0].get("message", {})
-        text = message.get("content", "").strip()
+        text = OpenRouterClient._extract_message_content(message)
         if not text:
             return ""
         cleaned = OpenRouterClient._strip_all_reasoning(text)
